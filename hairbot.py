@@ -4,13 +4,50 @@ import threading
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string
 import anthropic
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-PAYROLL_FILE = os.path.expanduser("~/Documents/hairbot/payroll.json")
-CHATS_DIR    = os.path.expanduser("~/Documents/hairbot/chats")
-MEMORY_FILE  = os.path.expanduser("~/Documents/hairbot/memory.json")
-os.makedirs(CHATS_DIR, exist_ok=True)
+
+def get_db():
+    return psycopg2.connect(os.environ.get('DATABASE_URL'), sslmode='require')
+
+
+def init_db():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS payroll (
+                id SERIAL PRIMARY KEY,
+                date DATE NOT NULL UNIQUE,
+                pay DECIMAL(10,2) NOT NULL,
+                tips DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS chats (
+                id VARCHAR(100) PRIMARY KEY,
+                title VARCHAR(255),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                messages JSONB DEFAULT '[]'
+            );
+            CREATE TABLE IF NOT EXISTS memory (
+                id SERIAL PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        ''')
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Database initialized.")
+    except Exception as e:
+        print(f"Database init error: {e}")
+
+
+init_db()
 
 SYSTEM_PROMPT = """You are a PhD-level Schwarzkopf color expert and educator. Your only job is to help a hairstylist deeply understand Schwarzkopf's color lines and how to use them. You know every product line Schwarzkopf makes: Igora Royal (permanent), Igora Vibrance (demi-permanent), Igora Color10 (10-minute), TBH (ammonia-free), BlondMe (blonde specialist), Igora Zero Amm (ammonia-free permanent), Igora Royal Absolutes (mature hair), Igora Royal Highlifts, Igora Royal Fashion Lights, Igora Royal Silver Whites, Igora Vario Blond (lightener). All Igora lines use the same numbering system.
 THE NUMBER SYSTEM: The number before the dash is the depth/level (1=black, 2=very dark brown, 3=dark brown, 4=medium brown, 5=light brown, 6=dark blonde, 7=medium blonde, 8=light blonde, 9=extra light blonde, 9.5=ultra light blonde). The first digit after the dash is the PRIMARY tone. The second digit (if present) is the SECONDARY tone. PRIMARY TONES: 0=Natural, 1=Ash/Cendré (cool, eliminates warmth), 2=Iridescent (pearl/violet shimmer, multi-dimensional cool), 3=Matt (flat, no shine, olive/green-cool), 4=Beige (warm-neutral), 5=Gold (warm yellow-gold), 6=Chocolate/Mahogany (warm red-brown), 7=Copper (warm orange-red), 8=Red (true red), 9=Violet/Extra Red. EXTENDED TONE CODES: 00=Natural Extra (extra coverage for resistant grey), 11=Ash Extra, 12=Ash Beige, 13=Cendré Plus (very cool strong ash), 16=Ash Brown (cool ash with brown base), 19=Violet Ash (smoky cool violet-ash), 21=Ash Iridescent, 22=Iridescent Extra, 24=Iridescent Beige, 29=Violet Iridescent, 33=Matt Extra, 42=Beige Iridescent, 46=Beige Chocolate, 48=Beige Red, 55=Gold Extra, 57=Gold Copper, 63=Chocolate Matt, 65=Chocolate Gold, 67=Chocolate Copper, 68=Chocolate Red, 76=Copper Chocolate, 77=Copper Extra, 84=Red Beige, 88=Red Extra, 98=Violet Red, 99=Violet Extra. Double same digits always mean Extra Intense. Two different digits = blend, first digit is dominant tone (-65 = chocolate dominant, gold secondary = chocolate gold; -68 = chocolate dominant, red secondary = chocolate red; -16 = ash dominant, chocolate secondary = ash brown).
@@ -26,27 +63,80 @@ FORMULA_SYSTEM_PROMPT = SYSTEM_PROMPT + """\n\nYou are now in Formula Builder mo
 # ── Payroll helpers ──────────────────────────────────────────────────────────
 
 def load_payroll():
-    if os.path.exists(PAYROLL_FILE):
-        with open(PAYROLL_FILE) as f:
-            return json.load(f)
-    return []
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute('SELECT * FROM payroll ORDER BY date DESC')
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [{"date": str(r["date"]), "pay": float(r["pay"]), "tips": float(r["tips"])} for r in rows]
+    except Exception as e:
+        print(f"load_payroll error: {e}")
+        return []
 
-def save_payroll(data):
-    with open(PAYROLL_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def save_payroll_entry(date, pay, tips):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            'INSERT INTO payroll (date, pay, tips) VALUES (%s, %s, %s) ON CONFLICT (date) DO UPDATE SET pay=%s, tips=%s',
+            (date, pay, tips, pay, tips)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"save_payroll_entry error: {e}")
+        raise
+
+def update_payroll_entry(original_date, new_date, pay, tips):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        if original_date != new_date:
+            cur.execute('DELETE FROM payroll WHERE date=%s', (original_date,))
+            cur.execute(
+                'INSERT INTO payroll (date, pay, tips) VALUES (%s, %s, %s) ON CONFLICT (date) DO UPDATE SET pay=%s, tips=%s',
+                (new_date, pay, tips, pay, tips)
+            )
+        else:
+            cur.execute('UPDATE payroll SET pay=%s, tips=%s WHERE date=%s', (pay, tips, original_date))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"update_payroll_entry error: {e}")
+        return False
 
 
 # ── Chat + memory helpers ────────────────────────────────────────────────────
 
 def load_memory():
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE) as f:
-            return json.load(f)
-    return []
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute('SELECT content FROM memory ORDER BY created_at ASC')
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [r['content'] for r in rows]
+    except Exception as e:
+        print(f"load_memory error: {e}")
+        return []
 
-def save_memory(facts):
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(facts, f, indent=2)
+def save_memory_items(new_items):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for item in new_items:
+            cur.execute('INSERT INTO memory (content) VALUES (%s)', (item,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"save_memory_items error: {e}")
 
 def build_system_prompt():
     memory = load_memory()
@@ -57,38 +147,60 @@ def build_system_prompt():
     return prompt
 
 def list_chats():
-    chats = []
     try:
-        files = sorted(
-            [f for f in os.listdir(CHATS_DIR) if f.endswith(".json")],
-            reverse=True,
-        )
-        for fname in files:
-            path = os.path.join(CHATS_DIR, fname)
-            with open(path) as f:
-                chat = json.load(f)
-            chats.append({
-                "id":         chat["id"],
-                "title":      chat.get("title", ""),
-                "created_at": chat["created_at"],
-            })
-    except Exception:
-        pass
-    return chats
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute('SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC')
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [{"id": r["id"], "title": r["title"] or "", "created_at": r["created_at"].isoformat() if r["created_at"] else ""} for r in rows]
+    except Exception as e:
+        print(f"list_chats error: {e}")
+        return []
 
 def get_chat(chat_id):
-    if "/" in chat_id or ".." in chat_id:
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute('SELECT * FROM chats WHERE id=%s', (chat_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return None
+        msgs = row["messages"]
+        if isinstance(msgs, str):
+            msgs = json.loads(msgs)
+        return {
+            "id":         row["id"],
+            "title":      row["title"] or "",
+            "created_at": row["created_at"].isoformat() if row["created_at"] else "",
+            "messages":   msgs,
+        }
+    except Exception as e:
+        print(f"get_chat error: {e}")
         return None
-    path = os.path.join(CHATS_DIR, chat_id + ".json")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        return json.load(f)
 
 def save_chat(chat):
-    path = os.path.join(CHATS_DIR, chat["id"] + ".json")
-    with open(path, "w") as f:
-        json.dump(chat, f, indent=2)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        chat_id  = chat["id"]
+        title    = chat.get("title", "")
+        messages = json.dumps(chat.get("messages", []))
+        cur.execute(
+            '''INSERT INTO chats (id, title, messages, updated_at)
+               VALUES (%s, %s, %s, NOW())
+               ON CONFLICT (id) DO UPDATE SET messages=%s, title=%s, updated_at=NOW()''',
+            (chat_id, title, messages, messages, title)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"save_chat error: {e}")
+        raise
 
 def make_chat():
     now = datetime.now()
@@ -128,9 +240,7 @@ def extract_memory_bg(messages):
         )
         new_facts = json.loads(resp.content[0].text.strip())
         if new_facts:
-            facts = load_memory()
-            facts.extend(new_facts)
-            save_memory(facts[-50:])
+            save_memory_items(new_facts)
     except Exception:
         pass
 
@@ -1470,41 +1580,42 @@ def chats_message(chat_id):
 
 @app.route("/payroll", methods=["GET"])
 def payroll_get():
-    return jsonify(load_payroll())
+    try:
+        return jsonify(load_payroll())
+    except Exception as e:
+        print(f"GET /payroll error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/payroll", methods=["POST"])
 def payroll_post():
-    data = request.get_json()
-    rows = load_payroll()
-    rows.append({
-        "date":      data["date"],
-        "pay":       float(data.get("pay",  0)),
-        "tips":      float(data.get("tips", 0)),
-        "logged_at": datetime.now().isoformat(),
-    })
-    save_payroll(rows)
-    return jsonify({"ok": True})
+    try:
+        data = request.get_json()
+        date = data["date"]
+        pay  = float(data.get("pay",  0))
+        tips = float(data.get("tips", 0))
+        save_payroll_entry(date, pay, tips)
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"POST /payroll error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/payroll/update", methods=["POST"])
 def payroll_update():
-    data = request.get_json()
-    original_date = data.get("original_date")
-    rows = load_payroll()
-    updated = False
-    for row in rows:
-        if row.get("date") == original_date:
-            row["date"]      = data["date"]
-            row["pay"]       = float(data.get("pay",  0))
-            row["tips"]      = float(data.get("tips", 0))
-            row["logged_at"] = datetime.now().isoformat()
-            updated = True
-            break
-    if not updated:
-        return jsonify({"error": "Entry not found"}), 404
-    save_payroll(rows)
-    return jsonify({"ok": True})
+    try:
+        data = request.get_json()
+        original_date = data.get("original_date")
+        new_date = data["date"]
+        pay  = float(data.get("pay",  0))
+        tips = float(data.get("tips", 0))
+        ok = update_payroll_entry(original_date, new_date, pay, tips)
+        if not ok:
+            return jsonify({"error": "Entry not found or update failed"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"POST /payroll/update error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/formula", methods=["POST"])
