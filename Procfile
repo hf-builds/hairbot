@@ -1,1 +1,1 @@
-web: gunicorn hairbot:app --bind 0.0.0.0:$PORT
+web: python hairbot.py
