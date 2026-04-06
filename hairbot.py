@@ -442,6 +442,41 @@ HTML = """<!DOCTYPE html>
   .fb-result hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   .fb-result blockquote { border-left: 3px solid var(--rose); padding-left: 10px; color: #666; margin: 6px 0; font-style: italic; }
 
+  /* ── Inspiration tab ── */
+  #inspo-tab { padding: 16px; overflow-y: auto; background: var(--bg); }
+  .inspo-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .inspo-pick-btn { min-height: 52px; background: #fff; color: var(--rose-dark); border: 2px solid var(--rose); border-radius: 14px; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent; }
+  .inspo-pick-btn:hover, .inspo-pick-btn:active { background: var(--rose-light); transform: scale(0.97); }
+  .inspo-preview-wrap { margin-bottom: 14px; display: none; }
+  .inspo-preview-wrap.has-photo { display: block; }
+  .inspo-preview { display: block; max-width: 100%; max-height: 300px; border-radius: 14px; border: 2px solid var(--border); object-fit: contain; }
+  .inspo-notes-row { margin-bottom: 14px; display: flex; flex-direction: column; gap: 5px; }
+  .inspo-notes-row label { font-size: 12px; font-weight: 700; color: var(--rose-dark); text-transform: uppercase; letter-spacing: 0.5px; }
+  .inspo-notes-row textarea { border: 1.5px solid #e0d8d5; border-radius: 10px; padding: 9px 12px; font-size: 15px; font-family: inherit; outline: none; background: #fff; resize: none; line-height: 1.4; transition: border-color 0.2s; }
+  .inspo-notes-row textarea:focus { border-color: var(--rose); }
+  .inspo-analyze-btn { width: 100%; background: var(--rose); color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; margin-bottom: 4px; }
+  .inspo-analyze-btn:hover { background: var(--rose-dark); }
+  .inspo-analyze-btn:disabled { background: #e8c8ca; cursor: default; }
+  .inspo-result { background: #fff; border-radius: 16px; border: 1.5px solid var(--border); border-top: 4px solid var(--rose); padding: 18px; margin-top: 12px; font-size: 15px; line-height: 1.55; }
+  .inspo-result p { margin: 0 0 8px; }
+  .inspo-result p:last-child { margin-bottom: 0; }
+  .inspo-result ul, .inspo-result ol { padding-left: 18px; margin: 4px 0 8px; }
+  .inspo-result li { margin: 2px 0; }
+  .inspo-result strong { font-weight: 700; }
+  .inspo-result em { font-style: italic; }
+  .inspo-result h1, .inspo-result h2, .inspo-result h3 { font-weight: 700; margin: 14px 0 5px; font-size: 15px; color: var(--rose-dark); }
+  .inspo-result h1:first-child, .inspo-result h2:first-child, .inspo-result h3:first-child { margin-top: 0; }
+  .inspo-result code { background: var(--rose-light); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+  .inspo-result hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .inspo-result blockquote { border-left: 3px solid var(--rose); padding-left: 10px; color: #666; margin: 6px 0; font-style: italic; }
+  .inspo-loading { background: #fff; border-radius: 16px; border: 1.5px solid var(--border); padding: 32px 16px; text-align: center; color: #bbb; font-size: 15px; margin-top: 12px; }
+  .inspo-spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--rose); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .inspo-reset { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--muted, #999); cursor: pointer; text-decoration: underline; background: none; border: none; font-family: inherit; padding: 0; }
+  .inspo-reset:hover { color: var(--rose-dark); }
+  .inspo-form-section { display: none; }
+  .inspo-form-section.show { display: block; }
+
   /* ── Mobile ── */
   @media (max-width: 600px) {
     .sidebar { position: fixed; left: 0; top: 55px; bottom: 0; z-index: 200; transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 4px 0 20px rgba(0,0,0,0.12); }
@@ -463,6 +498,7 @@ HTML = """<!DOCTYPE html>
   <button class="tab-btn" onclick="switchTab('payroll')">Payroll &amp; Tips</button>
   <button class="tab-btn" onclick="switchTab('shade')">Shade Chart</button>
   <button class="tab-btn" onclick="switchTab('formula')">Formula Builder</button>
+  <button class="tab-btn" onclick="switchTab('inspo')">Inspiration</button>
 </div>
 
 <!-- ── Color Assistant Tab ── -->
@@ -757,6 +793,38 @@ HTML = """<!DOCTYPE html>
   <div id="fb-result-area"></div>
 </div>
 
+<!-- ── Inspiration Tab ── -->
+<div id="inspo-tab" class="tab-content">
+  <!-- Hidden file inputs -->
+  <input type="file" id="inspo-camera-input" accept="image/*" capture="environment" style="display:none" onchange="inspoPhotoSelected(this)">
+  <input type="file" id="inspo-library-input" accept="image/*" style="display:none" onchange="inspoPhotoSelected(this)">
+
+  <!-- Pick buttons — always visible -->
+  <div class="inspo-btns">
+    <button class="inspo-pick-btn" onclick="document.getElementById('inspo-camera-input').click()">
+      &#128247; Take Photo
+    </button>
+    <button class="inspo-pick-btn" onclick="document.getElementById('inspo-library-input').click()">
+      &#128444;&#65039; Upload Photo
+    </button>
+  </div>
+
+  <!-- Form — shown after photo selected -->
+  <div class="inspo-form-section" id="inspo-form-section">
+    <div class="inspo-preview-wrap has-photo">
+      <img id="inspo-preview" class="inspo-preview" src="" alt="Selected photo">
+    </div>
+    <div class="inspo-notes-row">
+      <label>Any notes? (optional)</label>
+      <textarea id="inspo-notes" rows="2" placeholder="e.g. client wants to go lighter, this is the target and client is currently level 6..."></textarea>
+    </div>
+    <button class="inspo-analyze-btn" id="inspo-analyze-btn" onclick="analyzeInspo()">&#10024; Analyze &amp; Build Formula</button>
+  </div>
+
+  <!-- Result area -->
+  <div id="inspo-result-area"></div>
+</div>
+
 <script>
 // Configure marked
 marked.use({ breaks: true, gfm: true });
@@ -769,7 +837,7 @@ const DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 let shadeRendered = false;
 
 function switchTab(tab) {
-  const names = ['chat','payroll','shade','formula'];
+  const names = ['chat','payroll','shade','formula','inspo'];
   document.querySelectorAll('.tab-btn').forEach((b, i) => {
     b.classList.toggle('active', names[i] === tab);
   });
@@ -777,6 +845,7 @@ function switchTab(tab) {
   document.getElementById('payroll-tab').classList.toggle('active', tab === 'payroll');
   document.getElementById('shade-tab').classList.toggle('active', tab === 'shade');
   document.getElementById('formula-tab').classList.toggle('active', tab === 'formula');
+  document.getElementById('inspo-tab').classList.toggle('active', tab === 'inspo');
   if (tab === 'payroll') loadPayroll();
   if (tab === 'shade' && !shadeRendered) { renderShadeTable(); shadeRendered = true; }
 }
@@ -1509,6 +1578,76 @@ async function buildFormula() {
 
   btn.disabled = false;
 }
+
+// ── Inspiration ───────────────────────────────────────────────────────────────
+let inspoFileData = null;
+let inspoFileType = null;
+
+function inspoPhotoSelected(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  inspoFileType = file.type || 'image/jpeg';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    inspoFileData = e.target.result; // full data URL
+    document.getElementById('inspo-preview').src = inspoFileData;
+    document.getElementById('inspo-form-section').classList.add('show');
+    document.getElementById('inspo-result-area').innerHTML = '';
+    // Reset other input so same file can be re-selected if needed
+    document.getElementById('inspo-camera-input').value = '';
+    document.getElementById('inspo-library-input').value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyzeInspo() {
+  if (!inspoFileData) { alert('Please select a photo first.'); return; }
+
+  const notes   = document.getElementById('inspo-notes').value.trim();
+  const btn     = document.getElementById('inspo-analyze-btn');
+  const resultArea = document.getElementById('inspo-result-area');
+
+  btn.disabled = true;
+  resultArea.innerHTML = '<div class="inspo-loading"><span class="inspo-spinner"></span>Analyzing photo...</div>';
+  resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Strip the data URL prefix to get raw base64
+  const base64 = inspoFileData.split(',')[1];
+  const mediaType = inspoFileType;
+
+  try {
+    const res = await fetch('/inspiration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, media_type: mediaType, notes }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      resultArea.innerHTML = '<div class="inspo-loading">Error: ' + escHtml(data.error) + '</div>';
+    } else {
+      resultArea.innerHTML =
+        '<div class="inspo-result">' + marked.parse(data.formula) + '</div>' +
+        '<button class="inspo-reset" onclick="inspoReset()">Start Over</button>';
+      await updateChatList();
+    }
+  } catch (e) {
+    resultArea.innerHTML = '<div class="inspo-loading">Network error — please try again.</div>';
+  }
+
+  btn.disabled = false;
+}
+
+function inspoReset() {
+  inspoFileData = null;
+  inspoFileType = null;
+  document.getElementById('inspo-preview').src = '';
+  document.getElementById('inspo-form-section').classList.remove('show');
+  document.getElementById('inspo-notes').value = '';
+  document.getElementById('inspo-result-area').innerHTML = '';
+  document.getElementById('inspo-camera-input').value = '';
+  document.getElementById('inspo-library-input').value = '';
+}
 </script>
 </body>
 </html>"""
@@ -1670,6 +1809,71 @@ def formula_build():
 
         return jsonify({"formula": formula})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+INSPIRATION_SYSTEM_PROMPT = SYSTEM_PROMPT + """\n\nYou are now in Inspiration Photo Analysis mode. The user has uploaded a photo of either a client's current hair or an inspiration result they want to achieve. Analyze the hair color in the photo carefully. Identify: the approximate level (1-9.5), the dominant tone, any secondary tones, and the condition of the hair if visible. Then provide a complete Schwarzkopf formula to either match this color or achieve it from a typical natural base, using the Igora Royal line unless another line is more appropriate. Always include: shade number(s), developer volume and why, mixing ratio, processing time, warnings, and a brief explanation of what you see in the photo and why you chose this formula. If the photo shows inspiration hair rather than the client's current hair, state that and explain what starting base this formula assumes. Format your response with markdown bold headers: **What I See**, **Formula**, **Developer**, **Mixing Ratio**, **Processing Time**, **Warnings**, **Why This Works**."""
+
+
+@app.route("/inspiration", methods=["POST"])
+def inspiration_build():
+    try:
+        data       = request.get_json()
+        image_b64  = data.get("image", "")
+        media_type = data.get("media_type", "image/jpeg")
+        notes      = data.get("notes", "").strip()
+
+        if not image_b64:
+            return jsonify({"error": "No image provided"}), 400
+
+        # Validate media type
+        if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            media_type = "image/jpeg"
+
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type":       "base64",
+                    "media_type": media_type,
+                    "data":       image_b64,
+                },
+            },
+            {
+                "type": "text",
+                "text": "Please analyze this hair photo and provide a complete Schwarzkopf formula." + (f"\n\nAdditional notes from the stylist: {notes}" if notes else ""),
+            },
+        ]
+
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        resp = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1500,
+            system=INSPIRATION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        formula = resp.content[0].text
+
+        # Auto-save to chats
+        # Extract a short color description from the first line of the response
+        first_line = formula.split('\n')[0].strip().lstrip('#').strip()
+        title = "Inspiration: " + (first_line[:60] if first_line else "Photo Formula")
+
+        now = datetime.now()
+        chat_id = "inspo_" + now.strftime("%Y%m%d_%H%M%S_") + os.urandom(3).hex()
+        save_chat({
+            "id":         chat_id,
+            "title":      title,
+            "created_at": now.isoformat(),
+            "messages": [
+                {"role": "user",      "content": "[Photo uploaded]" + (f" — {notes}" if notes else "")},
+                {"role": "assistant", "content": formula},
+            ],
+        })
+
+        return jsonify({"formula": formula})
+    except Exception as e:
+        print(f"POST /inspiration error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
