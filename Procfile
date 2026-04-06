@@ -1,1 +1,1 @@
-web: python3 hairbot.py
+web: gunicorn hairbot:app
